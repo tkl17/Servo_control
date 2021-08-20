@@ -1,0 +1,221 @@
+"""
+Control Software (ICCS)
+
+Device Setup Package
+Communication Package
+
+Interface with USB I/O 24 R
+
+Version: 0.0.1   August/2021  
+
+"""
+
+import serial
+import time
+from struct import pack,unpack
+from sys import exit
+
+class Device:
+    def __init__(self, port, pin1, pin2):
+        self.port = port.upper()
+        self.pin1 = pin1
+        self.pin2 = pin2
+        self.binary = [0,0,0,0,0,0,0,0]
+		
+    def initialize(self):
+        try:
+            #Default settings for Serial Connection  
+            self.driver = serial.Serial(
+                    port="COM6", 
+                    baudrate = 19200,
+                    bytesize = serial.EIGHTBITS, #number of bits per bytes
+                    parity = serial.PARITY_NONE, #set parity check: no parity
+                    stopbits = serial.STOPBITS_ONE, #number of stop bits
+                    #timeout = None,          #block read
+                    timeout = 1,            #non-block read
+                    #timeout = 2,              #timeout block read
+                    xonxoff = False,     #disable software flow control
+                    rtscts = False,     #disable hardware (RTS/CTS) flow control
+                    dsrdtr = False,       #disable hardware (DSR/DTR) flow control
+                    writeTimeout = 1     #timeout for write
+                    )
+        
+        except Exception:
+            print("Error in initialization")
+            exit()    
+            
+    def _open(self):
+        """
+        Checks if port is open.
+        
+        """
+        if self.driver.isOpen() == False:
+            self.driver.open()
+    
+    def _close(self):
+        """
+        Checks if port is closed.
+        
+        """
+        if self.driver.isOpen() == True:
+            print('Error has occured. Closing connection.')
+            self.driver.close()        
+    
+    def terminate_connection(self):
+        """
+        Final Termination. Closes port.
+        
+        """
+        if self.driver.isOpen() == True:
+            self.driver.close()             
+    
+    def flush(self):
+        """
+        Flush input buffer, discarding all its contents.
+        
+        """
+        self.driver.flushInput()        
+        self.driver.flushOutput()
+    
+    def identify(self):
+        """
+        Returns identity of device: 'USB I/O 24'
+        
+        """
+        cmd_string = '?'
+        cmd=cmd_string.encode("Ascii")  
+        self.driver.write(cmd)
+        
+        Rtrn = self.driver.readline()
+        Rtrn_string = Rtrn.decode("Ascii")
+        print(Rtrn_string)
+        
+    def write(self,pin,state=None):
+        """
+        Parameters
+        ----------
+        pin : Integer
+            Pin number [1-8].
+        state : Integer/Bool [1,0]
+            Sets value of pin.
+
+        Raises
+        ------
+        InvalidState
+            State not 1 or 0.
+            
+        """
+        self._open()
+        
+        try:
+            if state == None:
+                self.binary[-pin] ^= 1
+            elif state not in [1, 0]:
+                Exception
+            else:
+                self.binary[-pin] = state
+            data_str = ''.join(map(str, self.binary))
+            data_decimal = int(data_str,2)
+            
+            cmd = pack(
+                "cB", 
+                self.port.encode('ascii'), 
+                data_decimal
+                )
+            
+            self.driver.write(cmd)
+        
+        except Exception:
+            print("Error in writing to port")
+            self._close()
+            exit()    
+    
+    def set_pin_direction(self,pin,state):     
+        """
+        Parameters
+        ----------
+        pin : Integer
+            Pin number [1-8].
+        state : Integer/Bool [1,0]
+            Sets direction of pin. 1 = input, 0 = output
+                
+        ------
+        InvalidState
+            State not 1 or 0.
+            
+        """
+        self._open()
+
+        try:
+            if state not in [1,0]:
+                Exception
+            
+            self.binary[-pin] = state        
+            data_str = ''.join(map(str, self.binary))
+            data_decimal = int(data_str,2)
+            
+            symbol = '!'
+            
+            cmd = pack(
+                'ccB', 
+                symbol.encode('ascii'), 
+                self.port.encode('ascii'), 
+                data_decimal
+                )
+            
+            self.driver.write(cmd)
+        
+        except Exception:
+            print("Error setting pin direction")
+            self._close()
+            exit()
+    
+    def read_port(self):
+        """
+        Returns
+        -------
+        output : 1 Byte Port Data
+            Reads from Self.Port.
+
+        """        
+        self._open()
+        
+        try:
+
+            cmd_string = self.port.lower()
+            cmd=cmd_string.encode("ascii")  
+            
+            self.driver.write(cmd)
+            response = self.driver.read()
+            output = unpack('B', response)[0]
+             
+        except Exception:
+            print("Error reading port")
+            self._close()
+            exit()
+            
+        return output
+    
+if __name__ == '__main__':
+    
+    tic = time.perf_counter()
+    
+    LC = Device('A',1,2)
+    LC.initialize()
+    LC.flush()
+    LC.set_pin_direction(1,0) # Set pin 1 to as an output
+    LC.set_pin_direction(2,0) # Set pin 2 to as an output
+      
+    for i in range(500):
+        LC.write(2) # Simple switch on and off (Channel 1)
+        time.sleep(0.005)
+    
+    print(LC.read_port()) # Read self.port
+    LC.terminate_connection() # Close connection
+    
+    toc = time.perf_counter()
+
+    print(f"Code ran in {toc - tic:0.4f} seconds")
+
+    print("Complete.")
+    
